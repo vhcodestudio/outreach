@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+import { lint, humanScore } from "./lint";
+import { compose, sequence } from "./compose";
+import { parseCSV, toCSV } from "./csv";
+import { classify } from "./classify";
+import { seedProspects, SENDER } from "./data";
+
+describe("lint", () => {
+  it("flags stock openers, em dashes and contrast reveals with positions", () => {
+    const t = "Olá! Espero que esteja bem. Isso não é sobre preço, é sobre tempo — sério.";
+    const issues = lint(t);
+    const rules = issues.map((i) => i.rule);
+    expect(rules).toContain("opener");
+    expect(rules).toContain("dash");
+    expect(rules).toContain("contrast");
+    for (const i of issues) expect(t.slice(i.start, i.end).length).toBeGreaterThan(0);
+  });
+  it("scores clean text higher than robotic text", () => {
+    const clean = "Vi que vocês abriram vaga para designer. Faço sites para clínicas e posso ajudar enquanto a vaga não fecha. Faz sentido conversar?";
+    const robot = "Espero que esteja bem! Gostaria de alavancar sinergias. Pergunta rápida: o resultado? Incrível — de verdade.";
+    expect(humanScore(clean)).toBeGreaterThan(humanScore(robot));
+    expect(humanScore(clean)).toBeGreaterThanOrEqual(90);
+  });
+});
+
+describe("compose", () => {
+  it("builds a short lowercase subject, uses the signal and avoids AI tells", () => {
+    const p = seedProspects[0];
+    const e = compose(p, SENDER);
+    expect(e.subject).toBe(e.subject.toLowerCase());
+    expect(e.subject.split(" ").length).toBeLessThanOrEqual(4);
+    expect(e.body).toContain(p.first);
+    expect(e.body.toLowerCase()).toContain(p.signal.toLowerCase().slice(0, 12));
+    expect(lint(e.body)).toEqual([]);
+    expect(e.body).toMatch(/descadastrar|não quer receber/i);
+  });
+  it("creates a sequence with growing gaps and a breakup email, all clean", () => {
+    const s = sequence(seedProspects[1], SENDER);
+    expect(s.length).toBe(4);
+    s.forEach((step, i) => { if (i) expect(step.day).toBeGreaterThan(s[i - 1].day); });
+    expect(s.at(-1)!.angle).toBe("despedida");
+    for (const step of s) expect(lint(step.body)).toEqual([]);
+  });
+});
+
+describe("csv", () => {
+  it("round-trips quoted fields", () => {
+    const rows = parseCSV('nome,empresa\n"Ana, Jr","Estúdio ""Aurora"""\n');
+    expect(rows).toEqual([{ nome: "Ana, Jr", empresa: 'Estúdio "Aurora"' }]);
+  });
+  it("neutralizes spreadsheet formula injection on export", () => {
+    const out = toCSV([{ nome: "=HYPERLINK(\"x\")", nota: "+1", ok: "normal" }]);
+    expect(out).toContain(`"'=HYPERLINK(""x"")"`);
+    expect(out).toContain(`"'+1"`);
+  });
+});
+
+describe("classify", () => {
+  it.each([
+    ["Pode ser, me manda horários na quinta?", "positivo"],
+    ["Quanto custa mais ou menos?", "dúvida"],
+    ["Agora não, talvez no ano que vem.", "depois"],
+    ["Por favor me tire da lista.", "descadastro"],
+    ["Estou fora do escritório até dia 20.", "ausente"],
+    ["Fala com a Bia, ela cuida disso.", "indicação"],
+    ["Já temos alguém fazendo isso.", "objeção"],
+  ])("%s → %s", (text, type) => {
+    expect(classify(text)).toBe(type);
+  });
+});
