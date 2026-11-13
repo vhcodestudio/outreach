@@ -94,7 +94,7 @@ export function CRM() {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
+        <main id="conteudo" className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
           <AnimatePresence mode="wait">
             <motion.div key={view} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
               <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
