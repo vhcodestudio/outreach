@@ -145,7 +145,8 @@ function Pipeline({ prospects, move }: { prospects: Prospect[]; move: (id: strin
                 {items.map((p) => (
                   <motion.li key={p.id} layoutId={p.id} layout transition={{ type: "spring", stiffness: 300, damping: 30 }}
                     draggable onDragStart={() => { dragId.current = p.id; }}
-                    className="group relative cursor-grab overflow-hidden rounded-md border border-rule bg-sheet p-3 shadow-sm active:cursor-grabbing">
+                    whileHover={{ y: -3, rotate: -0.6 }} whileDrag={{ scale: 1.03 }}
+                    className="group relative cursor-grab overflow-hidden rounded-md border border-rule bg-sheet p-3 shadow-sm transition-shadow hover:shadow-[0_14px_30px_-16px_rgba(18,26,43,.45)] active:cursor-grabbing">
                     <div className="airmail absolute inset-x-0 top-0 h-1 opacity-70" aria-hidden="true" />
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">

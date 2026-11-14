@@ -45,6 +45,7 @@ export function Composer({ prospects, onSend }: { prospects: Prospect[]; onSend:
   const [draft, setDraft] = useState(() => compose(p, SENDER, tone));
   const [active, setActive] = useState(-1);
   const [sent, setSent] = useState(false);
+  const [flights, setFlights] = useState(0);
   const ta = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
 
@@ -101,9 +102,16 @@ export function Composer({ prospects, onSend }: { prospects: Prospect[]; onSend:
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-rule px-4 py-3">
             <span className="font-mono text-xs text-muted">{words} palavras · {draft.subject.split(" ").length} no assunto</span>
-            <div className="flex gap-2">
+            <div className="relative flex gap-2">
+              <AnimatePresence>
+                {sent && (
+                  <motion.span key={flights} aria-hidden="true" className="pointer-events-none absolute -top-2 right-6 text-2xl"
+                    initial={{ x: 0, y: 0, rotate: 0, opacity: 1, scale: 1 }} animate={{ x: 160, y: -220, rotate: -18, opacity: 0, scale: 0.6 }}
+                    transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}>✉️</motion.span>
+                )}
+              </AnimatePresence>
               <button onClick={() => regenerate()} className="rounded-md border border-rule px-3 py-2 text-sm hover:border-ink">Gerar de novo</button>
-              <motion.button whileTap={{ scale: 0.96 }} onClick={() => { onSend(p, draft.subject); setSent(true); }} disabled={sent}
+              <motion.button whileTap={{ scale: 0.96 }} onClick={() => { onSend(p, draft.subject); setSent(true); setFlights((f) => f + 1); }} disabled={sent}
                 className="rounded-md bg-stamp px-4 py-2 text-sm font-semibold text-white disabled:bg-ok">
                 {sent ? "Enviado (demo) ✓" : "Enviar (demo)"}
               </motion.button>
