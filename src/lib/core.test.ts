@@ -4,6 +4,7 @@ import { compose, sequence } from "./compose";
 import { parseCSV, toCSV } from "./csv";
 import { classify } from "./classify";
 import { seedProspects, SENDER } from "./data";
+import { seedFor, senderFor } from "./data-intl";
 
 describe("lint", () => {
   it("flags stock openers, em dashes and contrast reveals with positions", () => {
@@ -66,5 +67,28 @@ describe("classify", () => {
     ["Já temos alguém fazendo isso.", "objeção"],
   ])("%s → %s", (text, type) => {
     expect(classify(text)).toBe(type);
+  });
+});
+
+describe("other languages", () => {
+  it.each(["en", "es"] as const)("%s drafts and sequences pass their own reviewer", (lang) => {
+    const seeds = seedFor(lang);
+    const e = compose(seeds[0], senderFor(lang), "direto", lang);
+    expect(e.body).toContain(seeds[0].signal);
+    expect(lint(e.body, lang)).toEqual([]);
+    for (const step of sequence(seeds[1], senderFor(lang), lang)) expect(lint(step.body, lang)).toEqual([]);
+  });
+  it("catches robotic English and Spanish", () => {
+    expect(humanScore("I hope this email finds you well! Quick question: we can leverage synergies — amazing.", "en")).toBeLessThan(60);
+    expect(humanScore("¡Espero que estés bien! Pregunta rápida: podemos potenciar sinergias — increíble.", "es")).toBeLessThan(60);
+  });
+  it.each([
+    ["en", "Please remove me from your list.", "descadastro"],
+    ["en", "Sounds good, can you send me some times?", "positivo"],
+    ["en", "I am out of the office until the 25th.", "ausente"],
+    ["es", "Ahora no, quizás el año que viene.", "depois"],
+    ["es", "Habla con Bea, ella lleva el marketing aquí.", "indicação"],
+  ] as const)("classifies %s reply: %s", (lang, text, type) => {
+    expect(classify(text, lang)).toBe(type);
   });
 });

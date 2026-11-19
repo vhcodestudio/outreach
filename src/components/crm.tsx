@@ -2,24 +2,20 @@
 
 import { useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, motion, MotionConfig } from "motion/react";
-import { STAGES, SENDER, type Prospect, type Stage } from "@/lib/data";
+import { STAGES, type Prospect, type Stage } from "@/lib/data";
 import { sequence } from "@/lib/compose";
-import { classify, REPLY_LABEL, type ReplyType } from "@/lib/classify";
+import { classify, SAMPLE_REPLIES, type ReplyType } from "@/lib/classify";
 import { parseCSV, toCSV } from "@/lib/csv";
-import { useCRM, today, brl } from "@/lib/store";
+import { useCRM, today, money } from "@/lib/store";
+import { senderFor } from "@/lib/data-intl";
+import { LangContext, langLabel, LANGS, ui, useLang, useLangState, type Lang } from "@/lib/i18n";
+
+const uiFor = (l: Lang) => ui[l];
 import { Composer } from "./composer";
 
-const VIEWS = ["Funil", "Prospects", "Escrever", "Sequências", "Respostas"] as const;
+const VIEWS = ["funil", "prospects", "escrever", "sequencias", "respostas"] as const;
 type View = (typeof VIEWS)[number];
 
-const SAMPLE_REPLIES = [
-  "Pode ser, me manda horários na terça?",
-  "Quanto custa mais ou menos uma página assim?",
-  "Agora não, talvez no começo do ano.",
-  "Fala com a Bia, ela cuida do marketing aqui.",
-  "Estou fora do escritório até dia 25.",
-  "Por favor me tire da lista.",
-];
 const AFTER_REPLY: Record<ReplyType, Stage> = {
   positivo: "respondeu", dúvida: "respondeu", indicação: "respondeu", objeção: "perdido", depois: "perdido", ausente: "contatado", descadastro: "perdido",
 };
@@ -29,8 +25,11 @@ const TONE: Record<ReplyType, string> = {
 };
 
 export function CRM() {
-  const { state, setState, reset } = useCRM();
-  const [view, setView] = useState<View>("Funil");
+  const [lang, setLang] = useLangState();
+  const t = useMemoUI(lang);
+  const { state, setState, reset } = useCRM(lang);
+  const [view, setView] = useState<View>("funil");
+  const brl = (n: number) => money(n, t.locale, t.currency);
   const { prospects } = state;
 
   const move = (id: string, stage: Stage) =>
@@ -48,8 +47,9 @@ export function CRM() {
     const pool = prospects.filter((p) => p.stage === "contatado");
     const target = pool[Math.floor(Math.random() * pool.length)];
     if (!target) return false;
-    const text = SAMPLE_REPLIES[Math.floor(Math.random() * SAMPLE_REPLIES.length)];
-    const type = classify(text);
+    const pool2 = SAMPLE_REPLIES[lang];
+    const text = pool2[Math.floor(Math.random() * pool2.length)];
+    const type = classify(text, lang);
     setState((s) => ({
       ...s,
       stopped: [...new Set([...s.stopped, target.id])],
@@ -63,6 +63,7 @@ export function CRM() {
   const touched = prospects.filter((p) => p.stage !== "novo").length;
 
   return (
+    <LangContext.Provider value={{ lang, t }}>
     <MotionConfig reducedMotion="user">
       <div className="mx-auto flex min-h-dvh max-w-[90rem] flex-col lg:flex-row">
         <aside className="border-b border-rule bg-sheet lg:sticky lg:top-0 lg:h-dvh lg:w-60 lg:shrink-0 lg:border-b-0 lg:border-r">
@@ -71,26 +72,27 @@ export function CRM() {
               <span className="grid size-7 place-items-center rounded-[3px] border-2 border-dashed border-stamp text-[11px] font-black text-stamp" aria-hidden="true">@</span>
               outreach
             </p>
-            <span className="rounded-full bg-stamp-soft px-2 py-0.5 font-mono text-[11px] text-stamp lg:mt-2 lg:inline-block">modo demo</span>
+            <span className="rounded-full bg-stamp-soft px-2 py-0.5 font-mono text-[11px] text-stamp lg:mt-2 lg:inline-block">{t.demo}</span>
+            <div className="lg:mt-4"><LangPicker lang={lang} setLang={setLang} label={t.language} /></div>
           </div>
-          <nav aria-label="Seções" className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:px-3">
-            {VIEWS.map((v) => (
+          <nav aria-label={t.sections} className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:px-3">
+            {VIEWS.map((v, vi) => (
               <button key={v} onClick={() => setView(v)} aria-current={view === v ? "page" : undefined}
                 className={`relative shrink-0 rounded-md px-3 py-2 text-left text-sm font-medium ${view === v ? "text-ink" : "text-muted hover:text-ink"}`}>
                 {view === v && <motion.span layoutId="nav" className="absolute inset-0 rounded-md bg-paper" transition={{ type: "spring", stiffness: 300, damping: 30 }} />}
                 <span className="relative flex items-center justify-between gap-3">
-                  {v}
-                  {v === "Respostas" && replied > 0 && <span className="rounded-full bg-stamp px-1.5 font-mono text-[10px] text-white">{replied}</span>}
+                  {t.views[vi]}
+                  {v === "respostas" && replied > 0 && <span className="rounded-full bg-stamp px-1.5 font-mono text-[10px] text-white">{replied}</span>}
                 </span>
               </button>
             ))}
           </nav>
           <div className="hidden px-5 pt-6 text-xs text-muted lg:block">
-            <p className="font-mono uppercase tracking-wider">Em aberto</p>
+            <p className="font-mono uppercase tracking-wider">{t.open}</p>
             <p className="mt-1 font-mono text-2xl text-ink">{brl(open.reduce((a, p) => a + p.value, 0))}</p>
-            <p className="mt-4 font-mono uppercase tracking-wider">Taxa de resposta</p>
+            <p className="mt-4 font-mono uppercase tracking-wider">{t.replyRate}</p>
             <p className="mt-1 font-mono text-2xl text-ink">{touched ? Math.round((replied / touched) * 100) : 0}%</p>
-            <button onClick={reset} className="mt-8 underline">Restaurar dados de exemplo</button>
+            <button onClick={reset} className="mt-8 underline">{t.reset}</button>
           </div>
         </aside>
 
@@ -99,46 +101,58 @@ export function CRM() {
             <motion.div key={view} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
               <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{view === "Escrever" ? "Escrever e-mail" : view}</h2>
-                  <p className="mt-1 text-muted">{SUB[view]}</p>
+                  <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{view === "escrever" ? t.writeTitle : t.views[VIEWS.indexOf(view)]}</h2>
+                  <p className="mt-1 text-muted">{t.sub[VIEWS.indexOf(view)]}</p>
                 </div>
               </header>
-              {view === "Funil" && <Pipeline prospects={prospects} move={move} />}
-              {view === "Prospects" && <Prospects prospects={prospects} setState={setState} />}
-              {view === "Escrever" && <Composer prospects={prospects} onSend={send} />}
-              {view === "Sequências" && <Sequences prospects={prospects} stopped={state.stopped} />}
-              {view === "Respostas" && <Inbox prospects={prospects} onSimulate={simulateReply} />}
+              {view === "funil" && <Pipeline prospects={prospects} move={move} />}
+              {view === "prospects" && <Prospects prospects={prospects} setState={setState} />}
+              {view === "escrever" && <Composer key={lang} prospects={prospects} onSend={send} />}
+              {view === "sequencias" && <Sequences key={lang} prospects={prospects} stopped={state.stopped} />}
+              {view === "respostas" && <Inbox prospects={prospects} onSimulate={simulateReply} />}
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
     </MotionConfig>
+    </LangContext.Provider>
   );
 }
 
-const SUB: Record<View, string> = {
-  Funil: "Arraste os envelopes entre as etapas, ou use o menu de cada um.",
-  Prospects: "Sua lista. Importe um CSV ou exporte o que já tem.",
-  Escrever: "Um rascunho a partir do sinal que você anotou. O revisor marca o que soa robótico.",
-  Sequências: "Follow-ups com um ângulo novo em cada toque. Param sozinhos quando a pessoa responde.",
-  Respostas: "Cada resposta é classificada para você saber o que fazer primeiro.",
-};
+function useMemoUI(lang: Lang) {
+  return uiFor(lang);
+}
+
+function LangPicker({ lang, setLang, label }: { lang: Lang; setLang: (l: Lang) => void; label: string }) {
+  return (
+    <div role="group" aria-label={label} className="flex gap-1 font-mono text-[11px] uppercase">
+      {LANGS.map((l) => (
+        <button key={l} type="button" onClick={() => setLang(l)} aria-pressed={l === lang} title={langLabel[l]} lang={l}
+          className={`min-h-8 min-w-8 rounded px-1.5 ${l === lang ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>
+          <span aria-hidden="true">{l}</span><span className="sr-only">{langLabel[l]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Pipeline({ prospects, move }: { prospects: Prospect[]; move: (id: string, s: Stage) => void }) {
   const [over, setOver] = useState<Stage | null>(null);
   const dragId = useRef<string | null>(null);
+  const { t } = useLang();
+  const brl = (n: number) => money(n, t.locale, t.currency);
   return (
     <LayoutGroup>
       <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 sm:-mx-8 sm:px-8">
         {STAGES.map((st) => {
           const items = prospects.filter((p) => p.stage === st.id);
           return (
-            <section key={st.id} aria-label={st.label}
+            <section key={st.id} aria-label={t.stages[st.id]}
               onDragOver={(e) => { e.preventDefault(); setOver(st.id); }} onDragLeave={() => setOver(null)}
               onDrop={() => { if (dragId.current) move(dragId.current, st.id); dragId.current = null; setOver(null); }}
               className={`w-72 shrink-0 snap-start rounded-lg border p-2 transition-colors ${over === st.id ? "border-stamp bg-stamp-soft" : "border-rule bg-paper"}`}>
               <h2 className="flex items-center justify-between px-2 py-1.5 text-sm font-semibold">
-                {st.label}
+                {t.stages[st.id]}
                 <span className="font-mono text-xs text-muted">{items.length} · {brl(items.reduce((a, p) => a + p.value, 0))}</span>
               </h2>
               <ul className="mt-1 min-h-24 space-y-2">
@@ -159,16 +173,16 @@ function Pipeline({ prospects, move }: { prospects: Prospect[]; move: (id: strin
                     <div className="mt-3 flex items-center justify-between gap-2">
                       <span className="font-mono text-xs">{brl(p.value)}</span>
                       <label className="text-xs">
-                        <span className="sr-only">Mover {p.company} para</span>
+                        <span className="sr-only">{t.moveTo(p.company)}</span>
                         <select value={p.stage} onChange={(e) => move(p.id, e.target.value as Stage)} className="rounded border border-rule bg-sheet px-1.5 py-1 text-xs">
-                          {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                          {STAGES.map((s) => <option key={s.id} value={s.id}>{t.stages[s.id]}</option>)}
                         </select>
                       </label>
                     </div>
                     {p.replies.length > 0 && <p className="mt-2 truncate border-t border-rule pt-2 text-xs text-muted">↩ “{p.replies.at(-1)!.text}”</p>}
                   </motion.li>
                 ))}
-                {!items.length && <li className="rounded-md border border-dashed border-rule p-4 text-center text-xs text-muted">Solte um envelope aqui</li>}
+                {!items.length && <li className="rounded-md border border-dashed border-rule p-4 text-center text-xs text-muted">{t.dropHere}</li>}
               </ul>
             </section>
           );
@@ -184,6 +198,8 @@ function Prospects({ prospects, setState }: { prospects: Prospect[]; setState: S
   const [q, setQ] = useState("");
   const [seg, setSeg] = useState("todos");
   const [msg, setMsg] = useState("");
+  const { t } = useLang();
+  const brl = (n: number) => money(n, t.locale, t.currency);
   const segments = ["todos", ...new Set(prospects.map((p) => p.segment))];
   const list = prospects.filter((p) => (seg === "todos" || p.segment === seg) && `${p.first} ${p.last} ${p.company} ${p.email}`.toLowerCase().includes(q.toLowerCase()));
 
@@ -196,46 +212,46 @@ function Prospects({ prospects, setState }: { prospects: Prospect[]; setState: S
 
   async function importCSV(f?: File) {
     if (!f) return;
-    if (f.size > 1_000_000) return setMsg("Arquivo grande demais (máx. 1 MB).");
+    if (f.size > 1_000_000) return setMsg(t.tooBig);
     const rows = parseCSV(await f.text()).filter((r) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email ?? ""));
     const added: Prospect[] = rows.slice(0, 200).map((r) => ({
       id: crypto.randomUUID(), first: r.nome || r.first || "—", last: r.sobrenome || r.last || "", role: r.cargo || "", company: r.empresa || r.company || "—",
       email: r.email, segment: r.segmento || "Outro", signal: r.sinal || "", problem: r.dor || "o site atual não acompanha o momento da empresa", stage: "novo", value: Number(r.valor) || 0, replies: [],
     }));
     setState((s) => ({ ...s, prospects: [...s.prospects, ...added] }));
-    setMsg(added.length ? `${added.length} prospects importados.` : "Nenhuma linha com e-mail válido. Colunas esperadas: nome, empresa, email, segmento, sinal.");
+    setMsg(added.length ? t.imported(added.length) : t.noRows);
   }
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar nome, empresa, e-mail" aria-label="Buscar"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.searchPh} aria-label={t.search}
           className="min-w-56 flex-1 rounded-md border border-rule bg-sheet px-3 py-2.5" />
-        <select value={seg} onChange={(e) => setSeg(e.target.value)} aria-label="Segmento" className="rounded-md border border-rule bg-sheet px-3 py-2.5">
-          {segments.map((s) => <option key={s}>{s}</option>)}
+        <select value={seg} onChange={(e) => setSeg(e.target.value)} aria-label={t.segment} className="rounded-md border border-rule bg-sheet px-3 py-2.5">
+          {segments.map((s) => <option key={s} value={s}>{s === "todos" ? t.all : s}</option>)}
         </select>
         <label className="cursor-pointer rounded-md border border-rule bg-sheet px-3 py-2.5 text-sm hover:border-ink">
-          Importar CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => importCSV(e.target.files?.[0])} />
+          {t.importCsv}<input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => importCSV(e.target.files?.[0])} />
         </label>
-        <button onClick={exportCSV} className="rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white">Exportar CSV</button>
+        <button onClick={exportCSV} className="rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white">{t.exportCsv}</button>
       </div>
       <p aria-live="polite" className="mt-2 min-h-5 text-sm text-muted">{msg}</p>
       <div className="mt-2 overflow-x-auto rounded-lg border border-rule bg-sheet">
         <table className="w-full min-w-[44rem] text-left text-sm">
           <thead className="border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
-            <tr><th className="px-4 py-3 font-normal">Contato</th><th className="px-4 py-3 font-normal">Sinal</th><th className="px-4 py-3 font-normal">Etapa</th><th className="px-4 py-3 text-right font-normal">Valor</th><th className="px-4 py-3 font-normal">Último toque</th></tr>
+            <tr><th className="px-4 py-3 font-normal">{t.cols[0]}</th><th className="px-4 py-3 font-normal">{t.cols[1]}</th><th className="px-4 py-3 font-normal">{t.cols[2]}</th><th className="px-4 py-3 text-right font-normal">{t.cols[3]}</th><th className="px-4 py-3 font-normal">{t.cols[4]}</th></tr>
           </thead>
           <tbody>
             {list.map((p) => (
               <tr key={p.id} className="border-b border-rule last:border-0 hover:bg-paper">
                 <td className="px-4 py-3"><p className="font-medium">{p.first} {p.last}</p><p className="text-muted">{p.company} · <span className="font-mono text-xs">{p.email}</span></p></td>
                 <td className="max-w-xs px-4 py-3 text-muted">{p.signal || "—"}</td>
-                <td className="px-4 py-3"><span className="rounded-full bg-paper px-2 py-1 text-xs">{STAGES.find((s) => s.id === p.stage)!.label}</span></td>
+                <td className="px-4 py-3"><span className="rounded-full bg-paper px-2 py-1 text-xs">{t.stages[p.stage]}</span></td>
                 <td className="px-4 py-3 text-right font-mono">{brl(p.value)}</td>
                 <td className="px-4 py-3 font-mono text-xs text-muted">{p.lastTouch ?? "—"}</td>
               </tr>
             ))}
-            {!list.length && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted">Ninguém com esse filtro.</td></tr>}
+            {!list.length && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted">{t.noMatch}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -248,11 +264,12 @@ function Sequences({ prospects, stopped }: { prospects: Prospect[]; stopped: str
   const [pid, setPid] = useState(active[0]?.id);
   const p = prospects.find((x) => x.id === pid);
   const [openStep, setOpenStep] = useState(0);
-  if (!p) return <p className="text-muted">Mande o primeiro e-mail para alguém e a sequência aparece aqui.</p>;
-  const steps = sequence(p, SENDER);
+  const { t, lang } = useLang();
+  if (!p) return <p className="text-muted">{t.noSeq}</p>;
+  const steps = sequence(p, senderFor(lang), lang);
   const isStopped = stopped.includes(p.id) || p.replies.length > 0;
   const start = p.lastTouch ? new Date(p.lastTouch + "T12:00") : new Date();
-  const dateOf = (d: number) => new Date(start.getTime() + d * 864e5).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  const dateOf = (d: number) => new Date(start.getTime() + d * 864e5).toLocaleDateString(t.locale, { day: "2-digit", month: "short" });
 
   return (
     <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
@@ -262,7 +279,7 @@ function Sequences({ prospects, stopped }: { prospects: Prospect[]; stopped: str
             <button onClick={() => { setPid(x.id); setOpenStep(0); }} aria-current={x.id === pid}
               className={`w-full rounded-md px-3 py-2 text-left text-sm ${x.id === pid ? "bg-sheet shadow-sm ring-1 ring-rule" : "text-muted hover:text-ink"}`}>
               <span className="block font-medium text-ink">{x.company}</span>
-              <span className="text-xs">{x.replies.length ? "parada · respondeu" : "em andamento"}</span>
+              <span className="text-xs">{x.replies.length ? t.stoppedReplied : t.running}</span>
             </button>
           </li>
         ))}
@@ -270,7 +287,7 @@ function Sequences({ prospects, stopped }: { prospects: Prospect[]; stopped: str
       <div>
         {isStopped && (
           <p className="mb-4 rounded-md border border-ok/30 bg-ok/5 px-4 py-3 text-sm text-ok">
-            {p.first} respondeu, então os próximos toques foram cancelados em todos os canais.
+            {t.stoppedNote(p.first)}
           </p>
         )}
         <ol className="relative border-l-2 border-rule pl-6">
@@ -281,7 +298,7 @@ function Sequences({ prospects, stopped }: { prospects: Prospect[]; stopped: str
               <li key={s.day} className="relative pb-6 last:pb-0">
                 <span className={`absolute -left-[33px] top-1 grid size-4 place-items-center rounded-full border-2 ${cancelled ? "border-rule bg-paper" : done ? "border-stamp bg-stamp" : "border-stamp bg-sheet"}`} />
                 <button onClick={() => setOpenStep(i)} aria-expanded={openStep === i} className="flex w-full flex-wrap items-baseline gap-x-3 text-left">
-                  <span className="font-mono text-xs text-muted">dia {s.day} · {dateOf(s.day)}</span>
+                  <span className="font-mono text-xs text-muted">{t.day} {s.day} · {dateOf(s.day)}</span>
                   <span className={`font-semibold ${cancelled ? "text-muted line-through" : ""}`}>{s.subject}</span>
                   <span className="rounded-full bg-paper px-2 py-0.5 text-xs text-muted">{s.angle}</span>
                 </button>
@@ -302,24 +319,18 @@ function Sequences({ prospects, stopped }: { prospects: Prospect[]; stopped: str
 
 function Inbox({ prospects, onSimulate }: { prospects: Prospect[]; onSimulate: () => boolean }) {
   const [note, setNote] = useState("");
-  const items = prospects.flatMap((p) => p.replies.map((r) => ({ p, r, type: classify(r.text) }))).sort((a, b) => b.r.at.localeCompare(a.r.at));
+  const { t, lang } = useLang();
+  const items = prospects.flatMap((p) => p.replies.map((r) => ({ p, r, type: classify(r.text, lang) }))).sort((a, b) => b.r.at.localeCompare(a.r.at));
   const order: ReplyType[] = ["positivo", "dúvida", "indicação", "objeção", "depois", "ausente", "descadastro"];
   const counts = order.map((t) => [t, items.filter((i) => i.type === t).length] as const).filter(([, n]) => n);
-  const NEXT: Record<ReplyType, string> = {
-    positivo: "Responda em minutos com dois horários e um link de agenda.",
-    dúvida: "Responda a pergunta em duas linhas e devolva com um pedido simples.",
-    indicação: "Agradeça e escreva para a pessoa indicada citando quem indicou.",
-    objeção: "Agradeça, deixe a porta aberta e encerre a sequência.",
-    depois: "Anote para voltar na data que a pessoa sugeriu.",
-    ausente: "Nada a fazer. O próximo toque sai depois da volta.",
-    descadastro: "Remova da lista e confirme. Não escreva de novo.",
-  };
+  const NEXT = t.next;
+  const REPLY_LABEL = t.replyLabel;
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
         {counts.map(([t, n]) => <span key={t} className={`rounded-full px-3 py-1 text-sm ${TONE[t]}`}>{REPLY_LABEL[t]} · {n}</span>)}
-        <button onClick={() => setNote(onSimulate() ? "Nova resposta chegou." : "Ninguém em “Contatados” para responder. Mande um e-mail antes.")}
-          className="ml-auto rounded-md border border-ink px-3 py-2 text-sm font-medium hover:bg-ink hover:text-white">Simular resposta</button>
+        <button onClick={() => setNote(onSimulate() ? t.newReply : t.nobody)}
+          className="ml-auto rounded-md border border-ink px-3 py-2 text-sm font-medium hover:bg-ink hover:text-white">{t.simulate}</button>
       </div>
       <p aria-live="polite" className="mt-2 min-h-5 text-sm text-muted">{note}</p>
       <ul className="mt-2 divide-y divide-rule rounded-lg border border-rule bg-sheet">
@@ -336,7 +347,7 @@ function Inbox({ prospects, onSimulate }: { prospects: Prospect[]; onSimulate: (
             </motion.li>
           ))}
         </AnimatePresence>
-        {!items.length && <li className="p-10 text-center text-muted">Nenhuma resposta ainda.</li>}
+        {!items.length && <li className="p-10 text-center text-muted">{t.noReplies}</li>}
       </ul>
     </div>
   );
